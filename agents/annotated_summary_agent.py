@@ -1,35 +1,53 @@
 # agents/annotated_summary_agent.py
 
+import openai
+import os
+from dotenv import load_dotenv
 from core.base_agent import BaseAgent
+
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 class AnnotatedSummaryAgent(BaseAgent):
     def run(self, contract_code):
-        lines = contract_code.strip().splitlines()
-        annotated_lines = []
-        summary = []
+        try:
+            prompt = f"""You are a Solidity security expert. Analyze the following smart contract:
+1. Annotate it line-by-line with inline comments (Solidity style).
+2. Summarize its behavior and any security risks in plain language.
 
-        for i, line in enumerate(lines):
-            stripped = line.strip()
+Contract:
+{contract_code}
+"""
 
-            if "call{" in stripped:
-                annotated_lines.append(f"{line} // 🔥 external call with value")
-                summary.append("Detected use of low-level call with value (possible reentrancy risk).")
-            elif "require(" in stripped:
-                annotated_lines.append(f"{line} // ✅ input or state validation")
-                summary.append("Require statement found for enforcing conditions.")
-            elif "msg.sender" in stripped:
-                annotated_lines.append(f"{line} // 🧑 identifies caller address")
-                summary.append("Detected use of msg.sender, likely for access or transfer.")
+            response = openai.ChatCompletion.create(
+                model="gpt-4o",  # or "gpt-4-1106-preview"
+                messages=[
+                    {"role": "system", "content": "You are a smart contract auditor."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3
+            )
 
+            content = response["choices"][0]["message"]["content"]
+
+            # Separate annotated code and summary if labeled
+            if "Summary:" in content:
+                annotated, summary = content.split("Summary:")
+                annotated = annotated.strip()
+                summary_points = [line.strip("-• \n") for line in summary.strip().splitlines() if line.strip()]
             else:
-                annotated_lines.append(line)
+                annotated = content.strip()
+                summary_points = []
 
-        return [{
-            "type": "AnnotatedCode",
-            "message": "Annotated Solidity code with inline comments.",
-            "annotated_code": "\n".join(annotated_lines)
-        }, {
-            "type": "Summary",
-            "message": "Natural language summary of contract behavior.",
-            "points": summary
-        }]
+            return [{
+                "type": "LLMAnnotated",
+                "message": "LLM-generated annotated code and summary.",
+                "annotated_code": annotated,
+                "points": summary_points
+            }]
+
+        except Exception as e:
+            return [{
+                "type": "Error",
+                "message": f"LLM processing failed: {e}"
+            }]
