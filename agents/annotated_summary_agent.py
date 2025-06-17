@@ -1,12 +1,14 @@
 # agents/annotated_summary_agent.py
 
-import openai
 import os
 from dotenv import load_dotenv
+from openai import OpenAI
 from core.base_agent import BaseAgent
 
+# Load environment variables
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=api_key)
 
 class AnnotatedSummaryAgent(BaseAgent):
     def run(self, contract_code):
@@ -19,8 +21,8 @@ Contract:
 {contract_code}
 """
 
-            response = openai.ChatCompletion.create(
-                model="gpt-4o",  # or "gpt-4-1106-preview"
+            response = client.chat.completions.create(
+                model="gpt-4o",  # You can change to "gpt-4" or "gpt-3.5-turbo" if needed
                 messages=[
                     {"role": "system", "content": "You are a smart contract auditor."},
                     {"role": "user", "content": prompt}
@@ -28,15 +30,15 @@ Contract:
                 temperature=0.3
             )
 
-            content = response["choices"][0]["message"]["content"]
+            content = response.choices[0].message.content.strip()
 
-            # Separate annotated code and summary if labeled
+            # Separate annotated code and summary if present
             if "Summary:" in content:
-                annotated, summary = content.split("Summary:")
+                annotated, summary = content.split("Summary:", 1)
                 annotated = annotated.strip()
                 summary_points = [line.strip("-• \n") for line in summary.strip().splitlines() if line.strip()]
             else:
-                annotated = content.strip()
+                annotated = content
                 summary_points = []
 
             return [{
